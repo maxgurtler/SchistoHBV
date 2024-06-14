@@ -1,0 +1,851 @@
+---
+title: "SCHISTO-HBV"
+subtitle: "SEN-B"
+author: "Max Gurtler"
+output: 
+  html_document:
+    theme: "journal"
+    toc: true
+    toc_float: true
+date: "2024-05-27"
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+options(repos = c(CRAN = "https://cran.r-project.org"))
+if(!require('pacman')) install.packages('pacman')
+pacman::p_load(tidyverse, here, janitor, dplyr, knitr, lubridate, reactable)
+```
+
+```{r}
+rm(list = ls())
+```
+
+# FIRST STEPS
+
+Dataset manipulation in 'bl_schisto_long_25052024_BW'.
+
+```{r}
+load("data/bl_schisto_wide_25052024_BW.Rdata")
+reactable(bl_schisto_wide_25052024_BW)
+```
+
+## Exclusion of HIV-HBV co-infected patients
+
+```{r}
+library(dplyr)
+library(haven)
+library(labelled)
+
+bl_schisto_wide_25052024_BW$hiv_status <- as.character(as_factor(bl_schisto_wide_25052024_BW$hiv_status))
+
+bl_schisto_wide_25052024_noCoInf <- bl_schisto_wide_25052024_BW %>% 
+  filter(hiv_status == "HBV")
+
+rm(list = "bl_schisto_wide_25052024_BW")
+```
+
+```{r}
+reactable(bl_schisto_wide_25052024_noCoInf)
+```
+
+```{r}
+# what values do we find in the 'hiv_status' column ?
+unique_values <- unique(bl_schisto_wide_25052024_noCoInf$hiv_status)
+print(unique_values)
+
+# patient count
+bl_schisto_wide_25052024_noCoInf %>%
+  arrange(pid) %>% 
+  distinct(pid) %>%
+  nrow()
+```
+
+
+## Create 'CCA_Fb' dataset with HBV-monoinfected patients who have been tested for CCA (n = 721)
+
+```{r}
+CCA_Fb <- bl_schisto_wide_25052024_noCoInf %>%
+  select(pid, cca_res, cca_bl_date, fibs_med_res, fibs_iqr_res, cap_med_res, cap_iqr_res) %>% 
+  filter(!is.na(cca_res))
+
+reactable(CCA_Fb)
+
+# checking for duplicates
+CCA_Fb %>% 
+  get_dupes
+```
+
+
+## Create 'SENB_noCCA' dataset with patients (both mono- & co-infected) who have never been tested for CCA (n = 127)
+
+```{r}
+# load dataset before exclusion of HIV/HBV patients
+load("data/bl_schisto_wide_25052024_BW.Rdata")
+
+SENB_noCCA <- bl_schisto_wide_25052024_BW %>%
+  select(pid, enrol_d, cca_res, cca_bl_date, fibs_med_res, fibs_iqr_res, cap_med_res, cap_iqr_res) %>%
+  rename(fibs_med = fibs_med_res) %>% 
+  rename(fibs_iqr = fibs_iqr_res) %>% 
+  rename(cap_med = cap_med_res) %>% 
+  rename(cap_iqr = cap_iqr_res) %>% 
+  filter(is.na(cca_res))
+
+rm(list = "bl_schisto_wide_25052024_BW")
+
+reactable(SENB_noCCA)
+
+# checking for duplicates
+SENB_noCCA %>% 
+  get_dupes
+```
+
+
+## List of SENB patients to be tested for CCA
+
+```{r}
+patient_list <- as.list(SENB_noCCA$pid)
+cat(paste(patient_list, collapse = ", "))
+```
+
+### We want a table with the pids but also the enrolment date for the FibroScan so we can find the Urine samples easily in the lab
+
+```{r}
+# import long table
+load("data/bl_schisto_long_25052024_BW.Rdata")
+
+# create 'CCA_Fb_long' dataset with variables of interest only
+CCA_Fb_long <- bl_schisto_long_25052024_BW %>%   
+  select(pid, enrol_d, test_dt, cca_res, fibs_med, fibs_iqr, cap_med, cap_iqr, hiv_status)
+
+# delete unnecessary datasets
+rm(list = "bl_schisto_long_25052024_BW")
+
+# unlabelling 'cca_res'
+CCA_Fb_long$cca_res <- as.character(as_factor(CCA_Fb_long$cca_res))
+
+# unlabelling 'hiv_status'
+CCA_Fb_long$hiv_status <- as.character(as_factor(CCA_Fb_long$hiv_status))
+
+# create 'df2' dataset with fibs_date
+df2 <- CCA_Fb_long %>%
+  group_by(pid) %>%
+  mutate(fibs_date = case_when(!is.na(fibs_med) & !is.na(cap_med) ~ test_dt)) %>% # create variable 'fibs_date'
+  fill(fibs_date, .direction = "downup") %>%
+  ungroup() %>%
+  filter(!is.na(fibs_date)) %>% 
+  filter(is.na(cca_res)) %>% 
+  select(-test_dt)
+
+# join both datasets
+patient_table <- inner_join(df2, SENB_noCCA) %>% 
+  select(-cca_bl_date) %>%
+  select(pid, enrol_d, cca_res, hiv_status)
+
+reactable(patient_table)
+
+write.csv(patient_table, file = "SENB_noCCA_n127.csv")
+
+# delete unnecessary datasets
+rm(list = "df2", "CCA_Fb_long")
+  
+```
+
+## Create 'SENBmono_noCCA' dataset with (mono-infected) patients who have never been tested for CCA (n = 78)
+
+```{r}
+SENBmono_noCCA <- bl_schisto_wide_25052024_noCoInf %>%
+  select(pid, cca_res, cca_bl_date, fibs_med_res, fibs_iqr_res, cap_med_res, cap_iqr_res) %>%
+  rename(fibs_med = fibs_med_res) %>% 
+  rename(fibs_iqr = fibs_iqr_res) %>% 
+  rename(cap_med = cap_med_res) %>% 
+  rename(cap_iqr = cap_iqr_res) %>% 
+  filter(is.na(cca_res))
+
+reactable(SENBmono_noCCA)
+
+# checking for duplicates
+SENBmono_noCCA %>% 
+  get_dupes
+```
+
+
+# SOCIO-DEMOGRAPHICS
+
+## Create temporary dataset with all socio-demographic variables
+
+```{r}
+sociodemo1 <- bl_schisto_wide_25052024_noCoInf %>%
+  select(1:23) %>%
+  mutate(country_orig = case_when(is.na(country_orig) ~ "Senegal",              # rename all 'NA' values in `country_orig` to 'Senegal'
+                                  !is.na(country_orig) ~ country_orig)) %>%
+  mutate(region_orig = case_when(!is.na(region_orig) ~ region_orig,             # rename all 'NA' values in `region_orig` to their country of origin
+                                 is.na(region_orig) ~ country_orig)) %>%
+  mutate(dpt_orig = case_when(!is.na(dpt_orig) ~ dpt_orig,                      # rename all 'NA' values in `dpt_orig` to their country of origin
+                                 is.na(dpt_orig) ~ country_orig)) %>%
+  select(-sen_yn)
+
+reactable(sociodemo1)
+```
+
+## Select for variables of interest only
+
+```{r}
+sociodemo2 <- sociodemo1 %>% 
+  select(pid, age_en, sex, country_orig, region_orig, reg_act, employ, other_employ) %>% 
+  mutate(employ = case_when(employ != "other" ~ employ,
+                            employ == "other" ~ str_to_lower(other_employ))) %>% 
+  select(-other_employ)
+
+reactable(sociodemo2)
+
+rm(list = "sociodemo1")
+```
+
+## Analysis
+
+```{r}
+# age
+## define median
+median_age <- median(sociodemo2$age_en, na.rm = TRUE)
+
+## define categories
+age_cat <- sociodemo2 %>% 
+  mutate(age_en = case_when(age_en < 31 ~ "18-31",
+                         age_en >= 31 ~ ">31"))
+age_cat %>%
+  tabyl(age_en) %>%
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 2)
+
+# sex
+sociodemo2 %>% 
+  tabyl(sex) %>%
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 2)
+
+# origin
+## define categories
+orig_cat <- sociodemo2 %>% 
+  mutate(orig_endemicity = case_when(
+    region_orig %in% c("Cameroun", "Benin", "Guinea", "Guinea_Bissau", "Ivory_Coast", "Mali", "Mauritania") ~ "Other Country",
+    region_orig %in% c("Kédougou", "Tambacounda", "Matam", "Saint_Louis", "Louga", "Sédhiou", "Kolda") ~ "≥50% prevalence (high)",
+    region_orig %in% c("Ziguinchor", "Kaffrine", "Kaolack", "Fatick", "Diurbel", "Thiès") ~ "1-49% prevalence (moderate)",
+    region_orig == "Dakar" ~ "<1% prevalence (non-endemic)"
+  ))
+
+orig_cat %>%
+  tabyl(orig_endemicity) %>%
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 2)
+
+# reg_act
+reg_act_cat <- sociodemo2 %>% 
+  mutate(reg_act = case_when(reg_act == "Dakar" ~ "Dakar",
+                                 reg_act != "Dakar" ~ "Outside"))
+
+reg_act_cat %>% 
+  tabyl(reg_act) %>%
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 2)
+
+# profession ?
+
+rm(list = "age_cat", "orig_cat", "reg_act_cat")
+```
+
+## Creation of final sociodemographics table
+
+```{r}
+sociodemo_final <- sociodemo2 %>%
+  mutate(age_en = case_when(
+    age_en < 31 ~ "18-31",
+    age_en >= 31 ~ ">31"
+  )) %>%
+  mutate(orig_endemicity = case_when(
+    region_orig %in% c("Cameroun", "Benin", "Guinea", "Guinea_Bissau", "Ivory_Coast", "Mali", "Mauritania") ~ "Other Country",
+    region_orig %in% c("Kédougou", "Tambacounda", "Matam", "Saint_Louis", "Louga", "Sédhiou", "Kolda") ~ "≥50% prevalence (high)",
+    region_orig %in% c("Ziguinchor", "Kaffrine", "Kaolack", "Fatick", "Diurbel", "Thiès") ~ "1-49% prevalence (moderate)",
+    region_orig == "Dakar" ~ "<1% prevalence (non-endemic)"
+  )) %>% 
+  mutate(reg_act = case_when(reg_act == "Dakar" ~ "Dakar",
+                                 reg_act != "Dakar" ~ "Outside")) %>% 
+  rename(age_cat = age_en) %>% 
+  select(pid, age_cat, sex, country_orig, region_orig, orig_endemicity, reg_act, employ)
+
+reactable(sociodemo_final)
+
+rm(list = "sociodemo2")
+
+```
+
+
+# COMORBIDITIES
+
+## Create temporary dataset with all comorbidities variables
+
+```{r}
+# recreate variable 'HTA' following definition : Confirmed arterial systolic pressure ≥140 mmHg and/or arterial diastolic pressure ≥90 mmHg, or any anti-hypertensive treatment before inclusion in SEN-B (source : WHO, https://www.who.int/news-room/fact-sheets/detail/hypertension, updated 16 March 2023)
+bl_schisto_wide_25052024_noCoInf <- bl_schisto_wide_25052024_noCoInf %>% 
+  mutate(HTA_diff = aHTA_start - enrol_d) %>%
+  mutate(HTA = case_when(!is.na(HTA_diff) ~ "yes",
+                         tas >= 140 ~ "yes",
+                         tad >= 90 ~ "yes",
+                         TRUE ~ "no")) %>% 
+  select(-HTA_diff)
+
+# recreate variable 'diabete' ?
+bl_schisto_wide_25052024_noCoInf %>% 
+  select(diabete, glu_res) %>% 
+  filter(diabete == "yes")
+
+# create variable 'dyslipidemia' : Total cholesterol >2g/l, HDL-c <0.4 g/l in men and <0.5 g/l in women, triglycerides >1.5 g/l, or LDL-cholesterol >1 g/l (source : https://www.ncbi.nlm.nih.gov/books/NBK560891/, updated 4 March 2024)
+bl_schisto_wide_25052024_noCoInf <- bl_schisto_wide_25052024_noCoInf %>%
+  mutate(dyslipidemia = case_when(colt_res > 2 ~ "yes",
+                                  trg_res > 1.5 ~ "yes",
+                                  ldl_res > 1 ~ "yes",
+                                  sex == "Female" & hdl_res < 0.4 ~ "yes",
+                                  sex == "Male" & hdl_res < 0.5 ~ "yes",
+                                  TRUE ~ "no"))
+
+# round 'BMI' to only 1 digit
+bl_schisto_wide_25052024_noCoInf$BMI <- round(bl_schisto_wide_25052024_noCoInf$BMI, 1)
+
+como1 <- bl_schisto_wide_25052024_noCoInf %>% 
+  select(pid, sex, alcohol_cons, audit_tot, drugs, smoke_yn, HTA, diabete, BMI, dyslipidemia, COL, AVC, renal, cancer, liver_dis_FDR, hcc_FDR)
+
+reactable(como1)
+```
+
+## Analysis
+
+```{r}
+# alcohol consumption
+como1 %>% 
+  tabyl(alcohol_cons) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 2)
+
+# audit-c (https://www.ncbi.nlm.nih.gov/pmc/articles/PMC10163557/)
+audit_cat <- como1 %>% 
+  mutate(audit_cat = case_when(sex == "Female" & audit_tot >= 3 ~ "Misuse",
+                               sex == "Male" & audit_tot >= 4 ~ "Misuse",
+                               audit_tot >= 10 ~ "Addiction",
+                               TRUE ~ "Negative"))
+
+audit_cat %>% 
+  tabyl(audit_cat) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 2)
+
+# drugs
+como1 %>% 
+  tabyl(drugs) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 2)
+
+# smoking
+como1 %>% 
+  tabyl(smoke_yn) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 2)
+
+# HTA
+como1 %>% 
+  tabyl(HTA) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 2)
+
+# diabete
+como1 %>% 
+  tabyl(diabete) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 2)
+
+# BMI (https://www.ncbi.nlm.nih.gov/books/NBK541070/)
+BMI_cat <- como1 %>% 
+  mutate(BMI_cat = case_when(BMI < 18.5 ~ "underweight",
+                             BMI >= 18.5 & BMI < 25 ~ "normal weight",
+                             BMI >= 25 & BMI < 30 ~ "overweight",
+                             BMI >= 30 ~ "obesity"))
+
+BMI_cat %>% 
+  tabyl(BMI_cat) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 2)
+
+# dyslipidemia
+como1 %>% 
+  tabyl(dyslipidemia) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 2)
+
+# variable 'COL' (?)
+como1 %>% 
+  tabyl(COL) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 2)
+
+# AVC
+como1 %>% 
+  tabyl(AVC) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 2)
+
+# variable 'renal' (?)
+como1 %>% 
+  tabyl(renal) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 2)
+
+# Cancer
+como1 %>% 
+  tabyl(cancer) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 2)
+
+# Liver Disease
+como1 %>% 
+  tabyl(liver_dis_FDR) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 2)
+
+# CHC Familial
+como1 %>% 
+  tabyl(hcc_FDR) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 2)
+
+# supprimer les objets crées de l'environnement
+rm(list = "audit_cat", "BMI_cat")
+
+# supprimer les variables peu intéressantes après l'anaylse descriptive
+como2 <- como1 %>%
+  select(pid, sex, alcohol_cons, audit_tot, drugs, smoke_yn, HTA, diabete, BMI, dyslipidemia, liver_dis_FDR, hcc_FDR) %>%
+  mutate(audit = case_when(sex == "Female" & audit_tot >= 3 ~ "Misuse",
+                               sex == "Male" & audit_tot >= 4 ~ "Misuse",
+                               audit_tot >= 10 ~ "Addiction",
+                               TRUE ~ "Negative")) %>% 
+  mutate(BMI = case_when(BMI < 18.5 ~ "underweight",
+                             BMI >= 18.5 & BMI < 25 ~ "normal weight",
+                             BMI >= 25 & BMI < 30 ~ "overweight",
+                             BMI >= 30 ~ "obesity")) %>% 
+  select(pid, sex, alcohol_cons, audit, drugs, smoke_yn, HTA, diabete, BMI, dyslipidemia, liver_dis_FDR, hcc_FDR)
+
+reactable(como2)
+
+rm(list = "como1")
+
+```
+
+## Join sociodemographics & comorbidities datasets
+
+```{r}
+sociodemo_como <- left_join(sociodemo_final, como2, by = "pid") %>% 
+  rename(sex = sex.x) %>% 
+  select(-sex.y)
+
+# delete unnecessary tables
+rm(list = "sociodemo_final", "como2")
+```
+
+I forgot to add the "dipstick EtG" variable...
+
+```{r}
+bl_schisto_wide_25052024_noCoInf
+
+# create table with 'pid' and 'etg_res'
+dipstick_etg <- bl_schisto_wide_25052024_noCoInf %>% 
+  select(pid, etg_res)
+
+# join 'dipstick_etg' with sociodemo_como
+sociodemo_como <- left_join(sociodemo_como, dipstick_etg, by = "pid") %>% 
+  select(pid, age_cat, sex, country_orig, region_orig, orig_endemicity, reg_act, employ, alcohol_cons, audit, etg_res,
+         drugs, smoke_yn, HTA, diabete, BMI, dyslipidemia, liver_dis_FDR, hcc_FDR)
+
+# delete 'dipstick_etg' table
+rm(list = "dipstick_etg")
+```
+
+## Now we got the full sociodemographics + comorbidities table
+
+```{r}
+reactable(sociodemo_como)
+```
+
+# HBV MARKERS
+
+## Create temporary dataset with all 'HBV markers' variables
+
+```{r}
+hbv_markers <- bl_schisto_wide_25052024_noCoInf %>% 
+  select(pid, enrol_d, cvb_res, AgHBs_res, qAgHBs_res, AgHBe_res, AcHBe_res) 
+
+# should I add AcHBs_res too ? lots of missing data (n=132)
+bl_schisto_wide_25052024_noCoInf %>% 
+  tabyl(AcHBs_res)
+
+# create variable "screen_d" with just the year
+hbv_markers <- hbv_markers %>% 
+  mutate(screen_d = year(enrol_d)) %>% 
+  select(-enrol_d) %>% 
+  select(pid, screen_d, cvb_res, AgHBs_res, qAgHBs_res, AgHBe_res, AcHBe_res)
+
+# categorize variable 'cvb_res' : <20, 20-2000, >2000 IU/mL (source : Hofmann et al., Hepatitis B Virus (HBV) Replication During Tenofovir Therapy Is Frequent in Human Immunodeficiency Virus/HBV Coinfection, Clinical Infectious Diseases, Volume 76, Issue 4, 15 February 2023, Pages 730–733, https://doi.org/10.1093/cid/ciac823)
+hbv_markers <- hbv_markers %>% 
+  mutate(cvb_detection = case_when(cvb_res < 20 ~ "HBV Suppression",
+                             cvb_res >2000 ~ "High-level Viremia",
+                             TRUE ~ "Low-level Viremia")) %>% 
+  select(pid, screen_d, cvb_res, cvb_detection, AgHBs_res, qAgHBs_res, AgHBe_res, AcHBe_res)
+
+# categorize variable 'qAgHBs_res' : <100, 100-1000, >1000 (source : Ouzan, 2014)
+hbv_markers <-  hbv_markers %>% 
+  mutate(qAgHBs_cat = case_when(qAgHBs_res < 100 ~ "<100 IU/mL",
+                                qAgHBs_res > 1000 ~ ">1000 IU/mL",
+                                TRUE ~ "100-1000 IU/mL")) %>% 
+  select(pid, screen_d, cvb_res, cvb_detection, AgHBs_res, qAgHBs_res, qAgHBs_cat, AgHBe_res, AcHBe_res)
+
+reactable(hbv_markers)
+```
+
+## Analysis
+
+```{r}
+# Screening date
+hbv_markers %>% 
+  tabyl(screen_d) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 2)
+
+# HBV DNA viral load
+hbv_markers %>% 
+  tabyl(cvb_detection) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 2)
+
+# AgHBs
+hbv_markers %>% 
+  tabyl(AgHBs_res) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 2)
+
+# qAgHBs
+hbv_markers %>% 
+  tabyl(qAgHBs_cat) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 2)
+
+# AgHbe
+hbv_markers %>% 
+  tabyl(AgHBe_res) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 2)
+
+# AcHBe
+hbv_markers %>% 
+  tabyl(AcHBe_res) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 2)
+```
+
+## Join 'hbv_markers' with 'sociodemo_como'
+
+```{r}
+SchistoHBV <- left_join(sociodemo_como, hbv_markers, by = "pid") %>% 
+  select(pid, screen_d, age_cat, sex, country_orig, region_orig,
+         orig_endemicity, reg_act, employ, alcohol_cons, audit, 
+         etg_res, drugs, smoke_yn, HTA, diabete, BMI, dyslipidemia, 
+         liver_dis_FDR, hcc_FDR, cvb_detection, AgHBs_res, 
+         qAgHBs_cat, AgHBe_res, AcHBe_res)
+
+rm(list = "sociodemo_como", "hbv_markers")
+
+reactable(SchistoHBV)
+```
+
+
+
+# HCV/HDV MARKERS
+
+## Create temporary dataset with all 'HCV/HDV markers' variables
+
+```{r}
+hcv_hdv_markers <- bl_schisto_wide_25052024_noCoInf %>% 
+  select(pid, AcVHC_res, AcVHD_res)
+
+reactable(hcv_hdv_markers)
+```
+
+## Analysis
+
+```{r}
+# HCV
+hcv_hdv_markers %>% 
+  tabyl(AcVHC_res) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 2)
+
+# HDV
+hcv_hdv_markers %>% 
+  tabyl(AcVHD_res) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 2)
+```
+
+
+# TDF Treatment
+
+## Create temporary dataset with all 'TDF' variables
+
+```{r}
+TDF_ttt <- bl_schisto_wide_25052024_noCoInf %>% 
+  select(pid, enrol_d, on_TDF_bl, TDF_start) %>% 
+  mutate(on_TDF_bl = case_when(is.na(on_TDF_bl) ~ "No",
+                               on_TDF_bl == "FALSE" ~"No",
+                               on_TDF_bl == "TRUE" ~ "Yes")) %>% 
+  mutate(TDF_duration = case_when(on_TDF_bl == "No" ~ 0,
+                                  on_TDF_bl == "Yes" ~ as.numeric(TDF_start - enrol_d))) %>% 
+  select(-TDF_start) %>% 
+  select(-enrol_d)
+
+reactable(TDF_ttt)
+```
+
+## Analysis
+
+```{r}
+TDF_ttt %>% 
+  tabyl(on_TDF_bl) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 2)
+
+# table of patients treated before baseline
+patients_TDF_bl <- TDF_ttt %>% 
+  filter(on_TDF_bl == "Yes")
+
+# mean TDF duration at baseline
+summary_TDF_duration <- patients_TDF_bl %>%
+  summarise(
+    mean_TDF_duration = mean(abs(as.numeric(TDF_duration)), na.rm = TRUE),
+    CI95 = t.test(abs(as.numeric(TDF_duration)), conf.level = 0.95, na.rm = TRUE)$conf.int
+  )
+
+mean_TDF_duration <- summary_TDF_duration$mean_TDF_duration
+CI95_lower <- summary_TDF_duration$CI95[1]
+CI95_upper <- summary_TDF_duration$CI95[2]
+
+mean_TDF_duration
+CI95_lower
+CI95_upper
+
+rm(list = "summary_TDF_duration", "patients_TDF_bl")
+
+```
+
+## Join 'TDF_ttt' with 'hcv_hdv_markers' and then with the 'SchistoHBV' dataset
+
+```{r}
+df <- left_join(hcv_hdv_markers, TDF_ttt, by = "pid")
+
+SchistoHBV <- left_join(SchistoHBV, df, by = "pid") %>% 
+  mutate(employ = str_to_title(employ),
+         alcohol_cons = str_to_title(alcohol_cons),
+         drugs = str_to_title(drugs),
+         smoke_yn = str_to_title(smoke_yn),
+         HTA = str_to_title(HTA),
+         diabete = str_to_title(diabete),
+         BMI = str_to_title(BMI),
+         dyslipidemia = str_to_title(dyslipidemia),
+         liver_dis_FDR = str_to_title(liver_dis_FDR),
+         hcc_FDR = str_to_title(hcc_FDR))
+
+reactable(SchistoHBV)
+
+rm(list = "df", "TDF_ttt", "hcv_hdv_markers")
+```
+
+
+# LIVER MARKERS
+
+## Create temporary dataset with all liver markers
+
+```{r}
+liver_markers <- bl_schisto_wide_25052024_noCoInf %>% 
+  select(pid, sex, alt_res, ast_res, pal_res, ggt_res, plt_res, blb_res, tp_res, alb_res, fibs_med_res, cap_med_res) %>%
+  mutate(apri_score = ((ast_res/40)*100)/plt_res*1000) %>%
+  mutate(apri_score = round(apri_score, 2)) %>% 
+  # recategorize variables
+  mutate(alt_res = case_when(sex == "Male" & alt_res > 50 ~ "High",
+                             sex == "Female" & alt_res > 40 ~ "High",
+                             TRUE ~ "Normal"),
+         apri_diag = case_when(apri_score > 1.5 ~ "Severe Fibrosis",
+                               apri_score < 0.5 ~ "No Fibrosis",
+                               is.na(apri_score) ~ "NA",
+                             TRUE ~ "Mild Fibrosis"),
+         pal_res = case_when(pal_res > 300 ~ ">300 IU/L",     # liver disease
+                             is.na(pal_res) ~ "NA",
+                             TRUE ~ "Normal"),
+         ggt_res = case_when(ggt_res > 50 ~ ">50 IU/L",
+                             is.na(ggt_res) ~ "NA",
+                             TRUE ~ "Normal"),
+         blb_res = case_when(blb_res > 1.1 ~ ">1.1 mg/L",
+                             is.na(blb_res) ~ "NA",
+                             TRUE ~ "Normal"),
+         tp_res = case_when(tp_res < 60 ~ "<60 g/L",       # liver or kidney disease
+                            is.na(tp_res) ~ "NA",          
+                            TRUE ~ "Normal"),
+         alb_res = case_when(alb_res < 35 ~ "<35 g/L",     # liver disease, Crohn disease
+                            is.na(alb_res) ~ "NA",
+                             TRUE ~ "Normal"),
+         fibs_med_diag = case_when(fibs_med_res >= 7.9 ~ "F2-4 (fibrosis or cirrhosis)",
+                                   is.na(fibs_med_res) ~ "NA",
+                                   TRUE ~ "F0-1 (no or mild fibrosis)"),
+         cap_med_diag = case_when(cap_med_res >= 248 ~ "SLD",
+                                  is.na(cap_med_res) ~ "NA",
+                                  TRUE ~ "Normal")
+         ) %>% 
+  select(pid, alt_res, pal_res, ggt_res, blb_res, tp_res, alb_res, apri_score, fibs_med_res, apri_diag, fibs_med_diag, cap_med_res, cap_med_diag)
+
+# SOURCES : Lala V, Zubair M, Minter DA. Liver Function Tests. [Updated 2023 Jul 30]. In: StatPearls [Internet]. Treasure Island (FL): StatPearls Publishing; 2024 Jan-. Available from: https://www.ncbi.nlm.nih.gov/books/NBK482489
+## APRI & FIB-4 : Lee J, Vali Y, Boursier J, Spijker R, Anstee QM, Bossuyt PM, Zafarmand MH. Prognostic accuracy of FIB-4, NAFLD fibrosis score and APRI for NAFLD-related events: A systematic review. Liver Int. 2021 Feb;41(2):261-270. doi: 10.1111/liv.14669. PMID: 32946642; PMCID: PMC7898346.
+## Fibrosis : Johannessen, A., Stockdale, A.J., Henrion, M.Y.R. et al. Systematic review and individual-patient-data meta-analysis of non-invasive fibrosis markers for chronic hepatitis B in Africa. Nat Commun 14, 45 (2023). https://doi.org/10.1038/s41467-022-35729-w
+## Steatosis : Karlas, T., et al., Individual patient data meta-analysis of controlled attenuation parameter (CAP) technology for assessing steatosis. J Hepatol, 2017. 66(5): p. 1022-1030.
+
+reactable(liver_markers)
+```
+
+## Analysis
+
+```{r}
+# ALAT
+liver_markers %>%
+  tabyl(alt_res) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 2)
+
+# PAL
+liver_markers %>%
+  tabyl(pal_res) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 2)
+
+# GGT
+liver_markers %>%
+  tabyl(ggt_res) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 2)
+  
+# Total Bilirubin
+liver_markers %>%
+  tabyl(blb_res) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 2)
+  
+# Total Protein
+liver_markers %>%
+  tabyl(tp_res) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 2)
+  
+# Albumin
+liver_markers %>%
+  tabyl(alb_res) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 2)
+
+# APRI
+liver_markers %>%
+  tabyl(apri_diag) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 2)
+  
+# FibroScan LSM
+liver_markers %>%
+  tabyl(fibs_med_diag) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 2)
+  
+# FibroScan CAP
+liver_markers %>%
+  tabyl(cap_med_diag) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 2)
+  
+# Remove 'Bilirubin' (n=90), 'Total Protein' (n=713) and 'Albumin' (n=93) because of too many NAs
+liver_markers <- liver_markers %>% 
+  select(-blb_res, -tp_res, -alb_res)
+```
+
+### I want to identify how many patients have discordant fibrosis diagnoses between 'apri_diag' and 'fibs_med_diag'
+
+```{r}
+discordant_patients <- liver_markers %>%
+  filter((apri_diag == "No or Mild Fibrosis" & fibs_med_diag == "F2-4 (fibrosis or cirrhosis)") |
+         (apri_diag == "Severe Fibrosis" & fibs_med_diag == "F0-1 (no or mild fibrosis)") |
+         (apri_diag != "Mild Fibrosis" & apri_diag != "Severe Fibrosis" & apri_diag != "No Fibrosis") |
+         (fibs_med_diag != "F0-1 (no or mild fibrosis)" & fibs_med_diag != "F2-4 (fibrosis or cirrhosis)"))
+
+# Print discordant patients (n=2)
+reactable(discordant_patients)
+```
+
+### Let's investigate why these two patients have discordant results between the APRI score and the FibroScan
+
+```{r}
+bl_schisto_wide_25052024_noCoInf %>% 
+  filter(pid %in% c("SENB1342", "SENB1628")) #...
+```
+
+## Join 'liver_markers' with 'SchistoHBV' dataset
+
+```{r}
+SchistoHBV <- left_join(SchistoHBV, liver_markers, by = "pid")
+reactable(SchistoHBV)
+```
+
+
+# URINE MARKERS
+
+## Create temporary dataset with all 'urine markers' variables needed
+
+```{r}
+urine_markers <- bl_schisto_wide_25052024_noCoInf %>% 
+  select(pid, protu_res, creu_res, albu_res, leubu_res, hembu_res, protbu_res, glubu_res)
+
+# create 'protein/creatinine ratio' variable (https://doi.org/10.1080/10408363.2020.1723487)
+urine_markers <- urine_markers %>% 
+  mutate(upcr_ratio = protu_res / creu_res) %>%
+  mutate(upcr_ratio = round(upcr_ratio, 2)) %>% 
+  mutate(upcr_diag = case_when(upcr_ratio > 0.2 ~ "Proteinuria (>0.2 mg/mg)",
+                               TRUE ~ "Normal (<0.2 mg/mg)")) %>%
+  select(pid, protu_res, creu_res, upcr_ratio, upcr_diag, albu_res, leubu_res, hembu_res, protbu_res, glubu_res)
+
+# create 'albumin/creatinine ratio' variable (https://doi.org/10.1097/JU.0000000000001005)
+urine_markers <- urine_markers %>% 
+  mutate(uacr_ratio = albu_res / creu_res) %>%
+  mutate(uacr_ratio = round(uacr_ratio, 2)) %>% 
+  mutate(uacr_diag = case_when(uacr_ratio > 0.3 ~ "Severe Albuminuria (>0.3 mg/mg)",
+                               uacr_ratio <= 0.03 ~ "Normal (<0.03 mg/mg)",
+                               TRUE ~ "Moderate Albuminuria (0.03-0.3 mg/mg)")) %>%
+  select(pid, protu_res, creu_res, upcr_ratio, upcr_diag, albu_res, uacr_ratio, uacr_diag, 
+         leubu_res, hembu_res, protbu_res, glubu_res)
+
+reactable(urine_markers)
+```
+
+
+
+# ULTRASOUND (US) DATA
+
+## Create temporary dataset with all 'Ultrasound' variables needed
+
+```{r}
+bl_schisto_wide_25052024_noCoInf
+```
+
+
+# 
