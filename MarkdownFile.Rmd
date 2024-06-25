@@ -18,7 +18,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r}
 options(repos = c(CRAN = "https://cran.r-project.org"))
 if(!require('pacman')) install.packages('pacman')
-pacman::p_load(tidyverse, here, janitor, dplyr, knitr, lubridate, reactable)
+pacman::p_load(tidyverse, here, janitor, dplyr, knitr, lubridate, reactable, gtsummary)
 ```
 
 ```{r}
@@ -45,9 +45,12 @@ bl_schisto_wide_25052024_BW$hiv_status <- as.character(as_factor(bl_schisto_wide
 
 bl_schisto_wide_25052024_noCoInf <- bl_schisto_wide_25052024_BW %>% 
   filter(hiv_status == "HBV")
+```
 
+```{r}
 rm(list = "bl_schisto_wide_25052024_BW")
 ```
+
 
 ```{r}
 reactable(bl_schisto_wide_25052024_noCoInf)
@@ -95,13 +98,15 @@ SENB_noCCA <- bl_schisto_wide_25052024_BW %>%
   rename(cap_iqr = cap_iqr_res) %>% 
   filter(is.na(cca_res))
 
-rm(list = "bl_schisto_wide_25052024_BW")
-
 reactable(SENB_noCCA)
 
 # checking for duplicates
 SENB_noCCA %>% 
   get_dupes
+```
+
+```{r}
+rm(list = "bl_schisto_wide_25052024_BW")
 ```
 
 
@@ -121,9 +126,6 @@ load("data/bl_schisto_long_25052024_BW.Rdata")
 # create 'CCA_Fb_long' dataset with variables of interest only
 CCA_Fb_long <- bl_schisto_long_25052024_BW %>%   
   select(pid, enrol_d, test_dt, cca_res, fibs_med, fibs_iqr, cap_med, cap_iqr, hiv_status)
-
-# delete unnecessary datasets
-rm(list = "bl_schisto_long_25052024_BW")
 
 # unlabelling 'cca_res'
 CCA_Fb_long$cca_res <- as.character(as_factor(CCA_Fb_long$cca_res))
@@ -149,11 +151,14 @@ patient_table <- inner_join(df2, SENB_noCCA) %>%
 reactable(patient_table)
 
 write.csv(patient_table, file = "SENB_noCCA_n127.csv")
-
-# delete unnecessary datasets
-rm(list = "df2", "CCA_Fb_long")
-  
 ```
+
+```{r}
+# delete unnecessary datasets
+rm(list = "bl_schisto_long_25052024_BW")
+rm(list = "df2", "CCA_Fb_long")
+```
+
 
 ## Create 'SENBmono_noCCA' dataset with (mono-infected) patients who have never been tested for CCA (n = 78)
 
@@ -196,15 +201,18 @@ reactable(sociodemo1)
 
 ```{r}
 sociodemo2 <- sociodemo1 %>% 
-  select(pid, age_en, sex, country_orig, region_orig, reg_act, employ, other_employ) %>% 
+  select(pid, age_en, sex, country_orig, region_orig, dpt_orig, reg_act, employ, other_employ) %>% 
   mutate(employ = case_when(employ != "other" ~ employ,
                             employ == "other" ~ str_to_lower(other_employ))) %>% 
   select(-other_employ)
 
 reactable(sociodemo2)
+```
 
+```{r}
 rm(list = "sociodemo1")
 ```
+
 
 ## Analysis
 
@@ -229,13 +237,21 @@ sociodemo2 %>%
   adorn_pct_formatting(digits = 2)
 
 # origin
+## transform "Diurbel " into "Diurbel"
+sociodemo2$dpt_orig <- trimws(sociodemo2$dpt_orig)
+
 ## define categories
 orig_cat <- sociodemo2 %>% 
   mutate(orig_endemicity = case_when(
     region_orig %in% c("Cameroun", "Benin", "Guinea", "Guinea_Bissau", "Ivory_Coast", "Mali", "Mauritania") ~ "Other Country",
-    region_orig %in% c("Kédougou", "Tambacounda", "Matam", "Saint_Louis", "Louga", "Sédhiou", "Kolda") ~ "≥50% prevalence (high)",
-    region_orig %in% c("Ziguinchor", "Kaffrine", "Kaolack", "Fatick", "Diurbel", "Thiès") ~ "1-49% prevalence (moderate)",
-    region_orig == "Dakar" ~ "<1% prevalence (non-endemic)"
+    region_orig %in% c("Kédougou", "Tambacounda", "Matam", "Saint_Louis") ~ "≥50% prevalence (high)",
+    dpt_orig %in% c("Bounkiling", "Sédhiou", "Medina Yoro Foulah", "Linguère", "Louga") ~ "≥50% prevalence (high)",
+    region_orig == "Kaffrine" ~ "10-49% prevalence (moderate)",
+    dpt_orig %in% c("Bignognal", "Oussouye", "Kolda", "Vélingara", "Kaolack", "Fatick", "Gossas",
+                    "Diurbel", "Bambey", "M'bour") ~ "10-49% prevalence (moderate)",
+    dpt_orig %in% c("Ziguinchor", "Nioro du Rip", "Guinguinéo", "Foundiougne", "Mbacké", "Tivaouane", "Thiès", "Kébémer") ~ "1-9.9% prevalence (low)",
+    region_orig == "Dakar" ~ "<1% prevalence (non-endemic)",
+    dpt_orig == "Goudomp" ~ "<1% prevalence (non-endemic)"
   ))
 
 orig_cat %>%
@@ -266,21 +282,27 @@ sociodemo_final <- sociodemo2 %>%
     age_en < 31 ~ "18-31",
     age_en >= 31 ~ ">31"
   )) %>%
-  mutate(orig_endemicity = case_when(
+    mutate(orig_endemicity = case_when(
     region_orig %in% c("Cameroun", "Benin", "Guinea", "Guinea_Bissau", "Ivory_Coast", "Mali", "Mauritania") ~ "Other Country",
-    region_orig %in% c("Kédougou", "Tambacounda", "Matam", "Saint_Louis", "Louga", "Sédhiou", "Kolda") ~ "≥50% prevalence (high)",
-    region_orig %in% c("Ziguinchor", "Kaffrine", "Kaolack", "Fatick", "Diurbel", "Thiès") ~ "1-49% prevalence (moderate)",
-    region_orig == "Dakar" ~ "<1% prevalence (non-endemic)"
+    region_orig %in% c("Kédougou", "Tambacounda", "Matam", "Saint_Louis") ~ "≥50% prevalence (high)",
+    dpt_orig %in% c("Bounkiling", "Sédhiou", "Medina Yoro Foulah", "Linguère", "Louga") ~ "≥50% prevalence (high)",
+    region_orig == "Kaffrine" ~ "10-49% prevalence (moderate)",
+    dpt_orig %in% c("Bignognal", "Oussouye", "Kolda", "Vélingara", "Kaolack", "Fatick", "Gossas",
+                    "Diurbel", "Bambey", "M'bour") ~ "10-49% prevalence (moderate)",
+    dpt_orig %in% c("Ziguinchor", "Nioro du Rip", "Guinguinéo", "Foundiougne", "Mbacké", "Tivaouane", "Thiès", "Kébémer") ~ "1-9.9% prevalence (low)",
+    region_orig == "Dakar" ~ "<1% prevalence (non-endemic)",
+    dpt_orig == "Goudomp" ~ "<1% prevalence (non-endemic)"
   )) %>% 
   mutate(reg_act = case_when(reg_act == "Dakar" ~ "Dakar",
                                  reg_act != "Dakar" ~ "Outside")) %>% 
   rename(age_cat = age_en) %>% 
-  select(pid, age_cat, sex, country_orig, region_orig, orig_endemicity, reg_act, employ)
+  select(pid, age_cat, sex, country_orig, region_orig, dpt_orig, orig_endemicity, reg_act, employ)
 
 reactable(sociodemo_final)
+```
 
-rm(list = "sociodemo2")
-
+```{r}
+rm(list = "sociodemo1", "sociodemo2")
 ```
 
 
@@ -422,8 +444,10 @@ como1 %>%
 
 # supprimer les objets crées de l'environnement
 rm(list = "audit_cat", "BMI_cat")
+```
 
-# supprimer les variables peu intéressantes après l'anaylse descriptive
+```{r}
+# supprimer les variables peu intéressantes après l'analyse descriptive
 como2 <- como1 %>%
   select(pid, sex, alcohol_cons, audit_tot, drugs, smoke_yn, HTA, diabete, BMI, dyslipidemia, liver_dis_FDR, hcc_FDR) %>%
   mutate(audit = case_when(sex == "Female" & audit_tot >= 3 ~ "Misuse",
@@ -437,10 +461,12 @@ como2 <- como1 %>%
   select(pid, sex, alcohol_cons, audit, drugs, smoke_yn, HTA, diabete, BMI, dyslipidemia, liver_dis_FDR, hcc_FDR)
 
 reactable(como2)
-
-rm(list = "como1")
-
 ```
+
+```{r}
+rm(list = "como1")
+```
+
 
 ## Join sociodemographics & comorbidities datasets
 
@@ -448,7 +474,9 @@ rm(list = "como1")
 sociodemo_como <- left_join(sociodemo_final, como2, by = "pid") %>% 
   rename(sex = sex.x) %>% 
   select(-sex.y)
+```
 
+```{r}
 # delete unnecessary tables
 rm(list = "sociodemo_final", "como2")
 ```
@@ -464,7 +492,7 @@ dipstick_etg <- bl_schisto_wide_25052024_noCoInf %>%
 
 # join 'dipstick_etg' with sociodemo_como
 sociodemo_como <- left_join(sociodemo_como, dipstick_etg, by = "pid") %>% 
-  select(pid, age_cat, sex, country_orig, region_orig, orig_endemicity, reg_act, employ, alcohol_cons, audit, etg_res,
+  select(pid, age_cat, sex, country_orig, region_orig, dpt_orig, orig_endemicity, reg_act, employ, alcohol_cons, audit, etg_res,
          drugs, smoke_yn, HTA, diabete, BMI, dyslipidemia, liver_dis_FDR, hcc_FDR)
 
 # delete 'dipstick_etg' table
@@ -483,31 +511,28 @@ reactable(sociodemo_como)
 
 ```{r}
 hbv_markers <- bl_schisto_wide_25052024_noCoInf %>% 
-  select(pid, enrol_d, cvb_res, AgHBs_res, qAgHBs_res, AgHBe_res, AcHBe_res) 
-
-# should I add AcHBs_res too ? lots of missing data (n=132)
-bl_schisto_wide_25052024_noCoInf %>% 
-  tabyl(AcHBs_res)
+  select(pid, enrol_d, cvb_res, qAgHBs_res, AgHBe_res) 
 
 # create variable "screen_d" with just the year
 hbv_markers <- hbv_markers %>% 
   mutate(screen_d = year(enrol_d)) %>% 
   select(-enrol_d) %>% 
-  select(pid, screen_d, cvb_res, AgHBs_res, qAgHBs_res, AgHBe_res, AcHBe_res)
+  select(pid, screen_d, cvb_res, qAgHBs_res, AgHBe_res)
 
-# categorize variable 'cvb_res' : <20, 20-2000, >2000 IU/mL (source : Hofmann et al., Hepatitis B Virus (HBV) Replication During Tenofovir Therapy Is Frequent in Human Immunodeficiency Virus/HBV Coinfection, Clinical Infectious Diseases, Volume 76, Issue 4, 15 February 2023, Pages 730–733, https://doi.org/10.1093/cid/ciac823)
+# categorize variable 'cvb_res' : <20, 20-2000, 2001-20000, >20000 IU/mL (source : https://doi.org/10.1016/S2468-1253(24)00040-2)
 hbv_markers <- hbv_markers %>% 
-  mutate(cvb_detection = case_when(cvb_res < 20 ~ "HBV Suppression",
-                             cvb_res >2000 ~ "High-level Viremia",
-                             TRUE ~ "Low-level Viremia")) %>% 
-  select(pid, screen_d, cvb_res, cvb_detection, AgHBs_res, qAgHBs_res, AgHBe_res, AcHBe_res)
+  mutate(cvb_detection = case_when(cvb_res <= 20 ~ "≤20 IU/mL",
+                             cvb_res > 20 & cvb_res <= 2000 ~ "21-2000 IU/mL",
+                             cvb_res > 2000 & cvb_res < 20000 ~ "2001-20000 IU/mL",
+                             TRUE ~ "≥20000 IU/mL")) %>% 
+  select(pid, screen_d, cvb_res, cvb_detection, qAgHBs_res, AgHBe_res)
 
 # categorize variable 'qAgHBs_res' : <100, 100-1000, >1000 (source : Ouzan, 2014)
 hbv_markers <-  hbv_markers %>% 
   mutate(qAgHBs_cat = case_when(qAgHBs_res < 100 ~ "<100 IU/mL",
                                 qAgHBs_res > 1000 ~ ">1000 IU/mL",
                                 TRUE ~ "100-1000 IU/mL")) %>% 
-  select(pid, screen_d, cvb_res, cvb_detection, AgHBs_res, qAgHBs_res, qAgHBs_cat, AgHBe_res, AcHBe_res)
+  select(pid, screen_d, cvb_res, cvb_detection, qAgHBs_res, qAgHBs_cat, AgHBe_res)
 
 reactable(hbv_markers)
 ```
@@ -527,12 +552,6 @@ hbv_markers %>%
   adorn_totals("row") %>% 
   adorn_pct_formatting(digits = 2)
 
-# AgHBs
-hbv_markers %>% 
-  tabyl(AgHBs_res) %>% 
-  adorn_totals("row") %>% 
-  adorn_pct_formatting(digits = 2)
-
 # qAgHBs
 hbv_markers %>% 
   tabyl(qAgHBs_cat) %>% 
@@ -544,12 +563,6 @@ hbv_markers %>%
   tabyl(AgHBe_res) %>% 
   adorn_totals("row") %>% 
   adorn_pct_formatting(digits = 2)
-
-# AcHBe
-hbv_markers %>% 
-  tabyl(AcHBe_res) %>% 
-  adorn_totals("row") %>% 
-  adorn_pct_formatting(digits = 2)
 ```
 
 ## Join 'hbv_markers' with 'sociodemo_como'
@@ -559,14 +572,15 @@ SchistoHBV <- left_join(sociodemo_como, hbv_markers, by = "pid") %>%
   select(pid, screen_d, age_cat, sex, country_orig, region_orig,
          orig_endemicity, reg_act, employ, alcohol_cons, audit, 
          etg_res, drugs, smoke_yn, HTA, diabete, BMI, dyslipidemia, 
-         liver_dis_FDR, hcc_FDR, cvb_detection, AgHBs_res, 
-         qAgHBs_cat, AgHBe_res, AcHBe_res)
-
-rm(list = "sociodemo_como", "hbv_markers")
+         liver_dis_FDR, hcc_FDR, cvb_detection, 
+         qAgHBs_cat, AgHBe_res)
 
 reactable(SchistoHBV)
 ```
 
+```{r}
+rm(list = "sociodemo_como", "hbv_markers")
+```
 
 
 # HCV/HDV MARKERS
@@ -602,6 +616,9 @@ hcv_hdv_markers %>%
 ## Create temporary dataset with all 'TDF' variables
 
 ```{r}
+bl_schisto_wide_25052024_noCoInf %>% 
+  tabyl(on_TDF_bl)
+
 TDF_ttt <- bl_schisto_wide_25052024_noCoInf %>% 
   select(pid, enrol_d, on_TDF_bl, TDF_start) %>% 
   mutate(on_TDF_bl = case_when(is.na(on_TDF_bl) ~ "No",
@@ -623,27 +640,31 @@ TDF_ttt %>%
   adorn_totals("row") %>% 
   adorn_pct_formatting(digits = 2)
 
-# table of patients treated before baseline
+library(broom)
+
+# Filter patients treated before baseline
 patients_TDF_bl <- TDF_ttt %>% 
   filter(on_TDF_bl == "Yes")
 
-# mean TDF duration at baseline
+# Median TDF duration at baseline and confidence interval for the median
 summary_TDF_duration <- patients_TDF_bl %>%
   summarise(
-    mean_TDF_duration = mean(abs(as.numeric(TDF_duration)), na.rm = TRUE),
-    CI95 = t.test(abs(as.numeric(TDF_duration)), conf.level = 0.95, na.rm = TRUE)$conf.int
+    median_TDF_duration = median(abs(as.numeric(TDF_duration)), na.rm = TRUE),
+    CI95 = list(broom::tidy(quantile(abs(as.numeric(TDF_duration)), probs = c(0.025, 0.975), na.rm = TRUE)))
   )
 
-mean_TDF_duration <- summary_TDF_duration$mean_TDF_duration
-CI95_lower <- summary_TDF_duration$CI95[1]
-CI95_upper <- summary_TDF_duration$CI95[2]
+median_TDF_duration <- summary_TDF_duration$median_TDF_duration
+CI95_lower <- summary_TDF_duration$CI95[[1]]$x[1]
+CI95_upper <- summary_TDF_duration$CI95[[1]]$x[2]
 
-mean_TDF_duration
+median_TDF_duration
 CI95_lower
 CI95_upper
 
-rm(list = "summary_TDF_duration", "patients_TDF_bl")
+```
 
+```{r}
+rm(list = "summary_TDF_duration", "patients_TDF_bl")
 ```
 
 ## Join 'TDF_ttt' with 'hcv_hdv_markers' and then with the 'SchistoHBV' dataset
@@ -664,7 +685,9 @@ SchistoHBV <- left_join(SchistoHBV, df, by = "pid") %>%
          hcc_FDR = str_to_title(hcc_FDR))
 
 reactable(SchistoHBV)
+```
 
+```{r}
 rm(list = "df", "TDF_ttt", "hcv_hdv_markers")
 ```
 
@@ -675,44 +698,37 @@ rm(list = "df", "TDF_ttt", "hcv_hdv_markers")
 
 ```{r}
 liver_markers <- bl_schisto_wide_25052024_noCoInf %>% 
-  select(pid, sex, alt_res, ast_res, pal_res, ggt_res, plt_res, blb_res, tp_res, alb_res, fibs_med_res, cap_med_res) %>%
+  select(pid, sex, alt_res, ast_res, plt_res, fibs_med_res, cap_med_res) %>%
   mutate(apri_score = ((ast_res/40)*100)/plt_res*1000) %>%
-  mutate(apri_score = round(apri_score, 2)) %>% 
+  mutate(apri_score = round(apri_score, 2)) %>%
   # recategorize variables
-  mutate(alt_res = case_when(sex == "Male" & alt_res > 50 ~ "High",
-                             sex == "Female" & alt_res > 40 ~ "High",
+  mutate(alt_res = case_when(alt_res <= 40 ~ "≤40 IU/L",
+                             alt_res > 80 ~ ">80 IU/L",
+                             TRUE ~ "41-80 IU/L"),
+         alt_elevated = case_when(sex == "Male" & alt_res > 32 ~ "High",
+                             sex == "Female" & alt_res > 19 ~ "High",
                              TRUE ~ "Normal"),
-         apri_diag = case_when(apri_score > 1.5 ~ "Severe Fibrosis",
-                               apri_score < 0.5 ~ "No Fibrosis",
+         apri_diag = case_when(apri_score > 1.5 ~ "Fibrosis",
+                               apri_score < 0.6 ~ "No Fibrosis",
                                is.na(apri_score) ~ "NA",
-                             TRUE ~ "Mild Fibrosis"),
-         pal_res = case_when(pal_res > 300 ~ ">300 IU/L",     # liver disease
-                             is.na(pal_res) ~ "NA",
-                             TRUE ~ "Normal"),
-         ggt_res = case_when(ggt_res > 50 ~ ">50 IU/L",
-                             is.na(ggt_res) ~ "NA",
-                             TRUE ~ "Normal"),
-         blb_res = case_when(blb_res > 1.1 ~ ">1.1 mg/L",
-                             is.na(blb_res) ~ "NA",
-                             TRUE ~ "Normal"),
-         tp_res = case_when(tp_res < 60 ~ "<60 g/L",       # liver or kidney disease
-                            is.na(tp_res) ~ "NA",          
-                            TRUE ~ "Normal"),
-         alb_res = case_when(alb_res < 35 ~ "<35 g/L",     # liver disease, Crohn disease
-                            is.na(alb_res) ~ "NA",
-                             TRUE ~ "Normal"),
-         fibs_med_diag = case_when(fibs_med_res >= 7.9 ~ "F2-4 (fibrosis or cirrhosis)",
-                                   is.na(fibs_med_res) ~ "NA",
-                                   TRUE ~ "F0-1 (no or mild fibrosis)"),
+                               TRUE ~ "Unknown"),
+         fibs_med_diag = case_when(fibs_med_res <= 7.0 ~ "F0-1 (no or mild fibrosis)",
+                                   fibs_med_res > 7.0 & fibs_med_res < 11.1 ~ "F2–3 (significant fibrosis)",
+                                   fibs_med_res >= 11.1 ~ "F4 (cirrhosis)",
+                                   is.na(fibs_med_res) ~ "NA"),
+         fibs7 = case_when(fibs_med_res >= 7.1 ~ "≥7.1 kPa",
+                           TRUE ~ "<7.0 kPa"),
+         fibs11 = case_when(fibs_med_res >= 11.1 ~ "≥11.1 kPa",
+                           TRUE ~ "<11.0 kPa"),
          cap_med_diag = case_when(cap_med_res >= 248 ~ "SLD",
                                   is.na(cap_med_res) ~ "NA",
                                   TRUE ~ "Normal")
          ) %>% 
-  select(pid, alt_res, pal_res, ggt_res, blb_res, tp_res, alb_res, apri_score, fibs_med_res, apri_diag, fibs_med_diag, cap_med_res, cap_med_diag)
+  select(pid, alt_res, alt_elevated, apri_score, apri_diag, fibs_med_res, fibs_med_diag, fibs7, fibs11, cap_med_res, cap_med_diag)
 
 # SOURCES : Lala V, Zubair M, Minter DA. Liver Function Tests. [Updated 2023 Jul 30]. In: StatPearls [Internet]. Treasure Island (FL): StatPearls Publishing; 2024 Jan-. Available from: https://www.ncbi.nlm.nih.gov/books/NBK482489
-## APRI & FIB-4 : Lee J, Vali Y, Boursier J, Spijker R, Anstee QM, Bossuyt PM, Zafarmand MH. Prognostic accuracy of FIB-4, NAFLD fibrosis score and APRI for NAFLD-related events: A systematic review. Liver Int. 2021 Feb;41(2):261-270. doi: 10.1111/liv.14669. PMID: 32946642; PMCID: PMC7898346.
-## Fibrosis : Johannessen, A., Stockdale, A.J., Henrion, M.Y.R. et al. Systematic review and individual-patient-data meta-analysis of non-invasive fibrosis markers for chronic hepatitis B in Africa. Nat Commun 14, 45 (2023). https://doi.org/10.1038/s41467-022-35729-w
+## APRI :
+## Fibrosis : Morse, C.G., et al., Transient elastography for the detection of hepatic fibrosis in HIV-monoinfected adults with elevated aminotransferases on antiretroviral therapy. Aids, 2015. 29(17): p. 2297-302.
 ## Steatosis : Karlas, T., et al., Individual patient data meta-analysis of controlled attenuation parameter (CAP) technology for assessing steatosis. J Hepatol, 2017. 66(5): p. 1022-1030.
 
 reactable(liver_markers)
@@ -727,36 +743,6 @@ liver_markers %>%
   adorn_totals("row") %>% 
   adorn_pct_formatting(digits = 2)
 
-# PAL
-liver_markers %>%
-  tabyl(pal_res) %>% 
-  adorn_totals("row") %>% 
-  adorn_pct_formatting(digits = 2)
-
-# GGT
-liver_markers %>%
-  tabyl(ggt_res) %>% 
-  adorn_totals("row") %>% 
-  adorn_pct_formatting(digits = 2)
-  
-# Total Bilirubin
-liver_markers %>%
-  tabyl(blb_res) %>% 
-  adorn_totals("row") %>% 
-  adorn_pct_formatting(digits = 2)
-  
-# Total Protein
-liver_markers %>%
-  tabyl(tp_res) %>% 
-  adorn_totals("row") %>% 
-  adorn_pct_formatting(digits = 2)
-  
-# Albumin
-liver_markers %>%
-  tabyl(alb_res) %>% 
-  adorn_totals("row") %>% 
-  adorn_pct_formatting(digits = 2)
-
 # APRI
 liver_markers %>%
   tabyl(apri_diag) %>% 
@@ -768,36 +754,35 @@ liver_markers %>%
   tabyl(fibs_med_diag) %>% 
   adorn_totals("row") %>% 
   adorn_pct_formatting(digits = 2)
-  
+
+# LSM ≥ 7.1 kPa
+liver_markers %>%
+  tabyl(fibs7) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 2)
+
+# LSM ≥ 11.1 kPa
+liver_markers %>%
+  tabyl(fibs11) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 2)
+
 # FibroScan CAP
 liver_markers %>%
   tabyl(cap_med_diag) %>% 
   adorn_totals("row") %>% 
   adorn_pct_formatting(digits = 2)
-  
-# Remove 'Bilirubin' (n=90), 'Total Protein' (n=713) and 'Albumin' (n=93) because of too many NAs
-liver_markers <- liver_markers %>% 
-  select(-blb_res, -tp_res, -alb_res)
 ```
 
 ### I want to identify how many patients have discordant fibrosis diagnoses between 'apri_diag' and 'fibs_med_diag'
 
 ```{r}
 discordant_patients <- liver_markers %>%
-  filter((apri_diag == "No or Mild Fibrosis" & fibs_med_diag == "F2-4 (fibrosis or cirrhosis)") |
-         (apri_diag == "Severe Fibrosis" & fibs_med_diag == "F0-1 (no or mild fibrosis)") |
-         (apri_diag != "Mild Fibrosis" & apri_diag != "Severe Fibrosis" & apri_diag != "No Fibrosis") |
-         (fibs_med_diag != "F0-1 (no or mild fibrosis)" & fibs_med_diag != "F2-4 (fibrosis or cirrhosis)"))
+  filter((apri_diag == "No Fibrosis" & fibs_med_diag != "F0-1 (no or mild fibrosis)") |
+         (apri_diag == "Fibrosis" & fibs_med_diag == "F0-1 (no or mild fibrosis)"))
 
-# Print discordant patients (n=2)
+# Print discordant patients (n=78)
 reactable(discordant_patients)
-```
-
-### Let's investigate why these two patients have discordant results between the APRI score and the FibroScan
-
-```{r}
-bl_schisto_wide_25052024_noCoInf %>% 
-  filter(pid %in% c("SENB1342", "SENB1628")) #...
 ```
 
 ## Join 'liver_markers' with 'SchistoHBV' dataset
@@ -814,29 +799,63 @@ reactable(SchistoHBV)
 
 ```{r}
 urine_markers <- bl_schisto_wide_25052024_noCoInf %>% 
-  select(pid, protu_res, creu_res, albu_res, leubu_res, hembu_res, protbu_res, glubu_res)
+  select(pid, protu_res, creu_res, leubu_res, hembu_res, protbu_res)
 
 # create 'protein/creatinine ratio' variable (https://doi.org/10.1080/10408363.2020.1723487)
 urine_markers <- urine_markers %>% 
   mutate(upcr_ratio = protu_res / creu_res) %>%
   mutate(upcr_ratio = round(upcr_ratio, 2)) %>% 
   mutate(upcr_diag = case_when(upcr_ratio > 0.2 ~ "Proteinuria (>0.2 mg/mg)",
-                               TRUE ~ "Normal (<0.2 mg/mg)")) %>%
-  select(pid, protu_res, creu_res, upcr_ratio, upcr_diag, albu_res, leubu_res, hembu_res, protbu_res, glubu_res)
-
-# create 'albumin/creatinine ratio' variable (https://doi.org/10.1097/JU.0000000000001005)
-urine_markers <- urine_markers %>% 
-  mutate(uacr_ratio = albu_res / creu_res) %>%
-  mutate(uacr_ratio = round(uacr_ratio, 2)) %>% 
-  mutate(uacr_diag = case_when(uacr_ratio > 0.3 ~ "Severe Albuminuria (>0.3 mg/mg)",
-                               uacr_ratio <= 0.03 ~ "Normal (<0.03 mg/mg)",
-                               TRUE ~ "Moderate Albuminuria (0.03-0.3 mg/mg)")) %>%
-  select(pid, protu_res, creu_res, upcr_ratio, upcr_diag, albu_res, uacr_ratio, uacr_diag, 
-         leubu_res, hembu_res, protbu_res, glubu_res)
+                               TRUE ~ "Normal (≤0.2 mg/mg)")) %>%
+# recategorize urine strip variables
+  mutate(leubu_res = case_when(leubu_res >= 1 ~ "Leukocyturia",
+                               leubu_res < 1 ~ "Normal")) %>%
+  mutate(hembu_res = case_when(hembu_res >= 1 ~ "Hematuria",
+                               hembu_res < 1 ~ "Normal")) %>%  
+  mutate(protbu_res = case_when(protbu_res >= 1 ~ "Proteinuria",
+                               protbu_res < 1 ~ "Normal")) %>%
+  select(pid, protu_res, creu_res, upcr_ratio, upcr_diag, leubu_res, hembu_res, protbu_res)
 
 reactable(urine_markers)
+
+# source : 
 ```
 
+## Analysis
+
+```{r}
+# UPCR Ratio
+urine_markers %>% 
+  tabyl(upcr_diag) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 2)
+
+# LEUBU
+urine_markers %>% 
+  tabyl(leubu_res) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 2)
+
+# HEMBU
+urine_markers %>% 
+  tabyl(hembu_res) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 2)
+
+# PROTBU
+urine_markers %>% 
+  tabyl(protbu_res) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 2)
+```
+
+- There is a problem with the UPCR ratio right ?
+- NAs ? (n=2)
+
+## Join 'urine_markers' with 'SchistoHBV'
+```{r}
+SchistoHBV <- left_join(SchistoHBV, urine_markers, by = "pid")
+```
 
 
 # ULTRASOUND (US) DATA
@@ -847,5 +866,112 @@ reactable(urine_markers)
 bl_schisto_wide_25052024_noCoInf
 ```
 
+# OTHER MARKERS
 
-# 
+## Create temporary dataset with all 'Other markers' needed
+
+```{r}
+other_markers <- bl_schisto_wide_25052024_noCoInf %>% 
+  select(pid, trad_med, trad_med_type, plants_type, trad_other, cre_res, age_en, sex)
+
+# trad_med
+other_markers <- other_markers %>% 
+  mutate(trad_med = case_when(trad_med == "no" ~ "None",
+                              trad_med == "yes" & trad_med_type == "plant" ~ "Plant",
+                              trad_med == "yes" & trad_med_type == "other" ~ "Oil/Powder",
+                              is.na(trad_med) ~ "None"))
+
+# eGFR
+other_markers <- other_markers %>%
+  mutate(
+    eGFR = case_when(
+      sex == 'Female' & cre_res <= 7 ~ 144 * (cre_res / 7)^(-0.329) * 0.993^age_en,
+      sex == 'Female' & cre_res > 7  ~ 144 * (cre_res / 7)^(-1.209) * 0.993^age_en,
+      sex == 'Male' & cre_res <= 9   ~ 141 * (cre_res / 9)^(-0.411) * 0.993^age_en,
+      sex == 'Male' & cre_res > 9    ~ 141 * (cre_res / 9)^(-1.209) * 0.993^age_en,
+      TRUE                           ~ NA_real_  # Use NA for any other cases (e.g., missing sex)
+    )
+  )
+
+# eGFR diagnosis
+other_markers <- other_markers %>% 
+  mutate(eGFR_diag = case_when(eGFR >= 60 ~ "≥60",
+                               eGFR <= 15 ~ "≤15",
+                               TRUE ~ "15-60")) %>% 
+  select(pid, trad_med, eGFR, eGFR_diag)
+```
+
+## Analysis
+
+```{r}
+# Traditional medicine
+other_markers %>% 
+  tabyl(trad_med) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 2)
+
+# eGFR
+other_markers %>% 
+  tabyl(eGFR_diag) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 2)
+```
+
+## Join 'other_markers' with 'SchistoHBV' dataset
+
+```{r}
+SchistoHBV <- left_join(SchistoHBV, other_markers, by = "pid")
+```
+
+# ADD CCA RESULTS
+
+```{r}
+cca_result <- bl_schisto_wide_25052024_noCoInf %>% 
+  select(pid, cca_res, enrol_d, cca_bl_date) %>% 
+  mutate(diff_cca = cca_bl_date - enrol_d) %>%
+  select(-enrol_d)
+
+SchistoHBV <- left_join(SchistoHBV, cca_result, by = "pid")
+```
+
+# TABLE 2
+
+```{r}
+SchistoHBV %>%
+  select(-pid, -country_orig, -region_orig, -employ, -TDF_duration, -alt_elevated, -apri_score, -fibs_med_res, -fibs7, -fibs11, -cap_med_res, -protu_res, 
+         -creu_res, -upcr_ratio, -eGFR, -cca_bl_date, -diff_cca) %>%
+  mutate(age_cat = factor(age_cat, levels = c("18-31", ">31"))) %>%
+  mutate(orig_endemicity = factor(orig_endemicity, levels = c("<1% prevalence (non-endemic)", "1-9.9% prevalence (low)", 
+                                                              "10-49% prevalence (moderate)", "≥50% prevalence (high)", "Other Country"))) %>%
+  mutate(alcohol_cons = factor(alcohol_cons, levels = c("Yes_past", "No"))) %>% 
+  mutate(drugs = factor(drugs, levels = c("Yes_now", "Yes_past", "No"))) %>% 
+  mutate(smoke_yn = factor(smoke_yn, levels = c("Yes_now", "Yes_past", "No"))) %>% 
+  mutate(BMI = factor(BMI, levels = c("Normal Weight", "Underweight", "Overweight", "Obesity"))) %>% 
+  mutate(cvb_detection = factor(cvb_detection, levels = c("≤20 IU/mL", "21-2000 IU/mL", "2001-20000 IU/mL", "≥20000 IU/mL"))) %>% 
+  mutate(qAgHBs_cat = factor(qAgHBs_cat, levels = c("<100 IU/mL", "100-1000 IU/mL", ">1000 IU/mL"))) %>% 
+  mutate(alt_res = factor(alt_res, levels = c("≤40 IU/L", "41-80 IU/L", ">80 IU/L"))) %>% 
+  mutate(cap_med_diag = factor(cap_med_diag, levels = c("SLD", "Normal"))) %>%
+  mutate(upcr_diag = factor(upcr_diag, levels = c("Proteinuria (>0.2 mg/mg)", "Normal (<0.2 mg/mg)"))) %>% 
+  mutate(protbu_res = factor(protbu_res, levels = c("Proteinuria", "Normal"))) %>%
+  mutate(trad_med = factor(trad_med, levels = c("Plant", "Oil/Powder", "None"))) %>%
+  tbl_summary(by = cca_res,
+              missing = "no",
+              statistic = list(all_categorical() ~ "{n} / {N} ({p}%)"),
+              missing_text = "(Missing)",
+              label = list(screen_d ~ "Screening Year", age_cat ~ "Age", orig_endemicity ~ "Origin", reg_act ~ "Residence", 
+                           alcohol_cons ~ "Alcohol Consumption", audit ~ "AUDIT-C Score", etg_res ~ "Dipstick EtG", 
+                           drugs ~ "Drug Consumption", smoke_yn ~ "Smoking", HTA ~ "Hypertension", diabete ~ "Diabetes", 
+                           dyslipidemia ~ "Dyslipidemia", liver_dis_FDR ~ "Family History of Liver Disease", 
+                           hcc_FDR ~ "Family History of HCC", cvb_detection ~ "HBV viral load", qAgHBs_cat ~ "qAgHBs", 
+                           AgHBe_res ~ "AgHBe", AcVHC_res ~ "HCV Serology", AcVHD_res ~ "HDV Serology", on_TDF_bl ~ "On TDF at Baseline",
+                           alt_res ~ "ALAT", apri_diag ~ "APRI Score", fibs_med_diag ~ "FibroScan LSM", cap_med_diag ~ "FibroScan CAP", 
+                           upcr_diag ~ "UPCR Ratio", leubu_res ~ "Leukocyturia (Urine Strips)", hembu_res ~ "Hematuria (Urine Strips)", 
+                           protbu_res ~ "Proteinuria (Urine Strips)", trad_med ~ "Traditional Medicine", eGFR_diag ~ "eGFR")) %>%
+  add_overall(last = TRUE, col_label = "**Total** (N = {N})") %>% 
+  add_p(pvalue_fun = ~ style_pvalue(.x, digits = 2)) %>%
+  modify_header(label ~ "**Variable**") %>%
+  modify_spanning_header(c("stat_1", "stat_2") ~ "**CCA Result**") %>%
+  modify_caption("**Table 2. Patient Characteristics**") %>%
+  bold_labels() %>% 
+  as_gt()
+```
