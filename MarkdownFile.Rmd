@@ -12,7 +12,7 @@ date: "2024-05-27"
 
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = FALSE)
 ```
 
 ```{r}
@@ -934,7 +934,69 @@ cca_result <- bl_schisto_wide_25052024_noCoInf %>%
 SchistoHBV <- left_join(SchistoHBV, cca_result, by = "pid")
 ```
 
-# TABLE 2
+```{r}
+write.csv(SchistoHBV, file = "SchistoHBV_20240625.csv")
+```
+
+# ANALYSIS
+
+## Prevalence
+
+```{r}
+cases <- CCA_Fb %>% filter(cca_res == "Positive") %>% nrow()
+
+subjects <- CCA_Fb %>% nrow()
+
+prevalence <- round((cases/subjects)*100, 1)
+
+print(paste0("The prevalence of schistosomiasis among people living with HBV in Dakar is ", prevalence, "%"))
+```
+
+
+## Table 1
+
+```{r}
+SchistoHBV %>%
+  select(-pid, -country_orig, -region_orig, -employ, -TDF_duration, -alt_elevated, -apri_score, -fibs_med_res, -fibs7, -fibs11, -cap_med_res, -protu_res, 
+         -creu_res, -upcr_ratio, -eGFR, -cca_bl_date, -diff_cca) %>%
+  mutate(age_cat = factor(age_cat, levels = c("18-31", ">31"))) %>%
+  mutate(orig_endemicity = factor(orig_endemicity, levels = c("<1% prevalence (non-endemic)", "1-9.9% prevalence (low)", 
+                                                              "10-49% prevalence (moderate)", "≥50% prevalence (high)", "Other Country"))) %>%
+  mutate(alcohol_cons = factor(alcohol_cons, levels = c("Yes_past", "No"))) %>% 
+  mutate(drugs = factor(drugs, levels = c("Yes_now", "Yes_past", "No"))) %>% 
+  mutate(smoke_yn = factor(smoke_yn, levels = c("Yes_now", "Yes_past", "No"))) %>% 
+  mutate(BMI = factor(BMI, levels = c("Normal Weight", "Underweight", "Overweight", "Obesity"))) %>% 
+  mutate(cvb_detection = factor(cvb_detection, levels = c("≤20 IU/mL", "21-2000 IU/mL", "2001-20000 IU/mL", "≥20000 IU/mL"))) %>% 
+  mutate(qAgHBs_cat = factor(qAgHBs_cat, levels = c("<100 IU/mL", "100-1000 IU/mL", ">1000 IU/mL"))) %>% 
+  mutate(alt_res = factor(alt_res, levels = c("≤40 IU/L", "41-80 IU/L", ">80 IU/L"))) %>% 
+  mutate(cap_med_diag = factor(cap_med_diag, levels = c("SLD", "Normal"))) %>%
+  mutate(upcr_diag = factor(upcr_diag, levels = c("Proteinuria (>0.2 mg/mg)", "Normal (<0.2 mg/mg)"))) %>% 
+  mutate(protbu_res = factor(protbu_res, levels = c("Proteinuria", "Normal"))) %>%
+  mutate(trad_med = factor(trad_med, levels = c("Plant", "Oil/Powder", "None"))) %>%
+  mutate(cca_res = factor(cca_res, levels = c("Positive", "Negative"))) %>% 
+  tbl_summary(by = sex,
+              missing = "no",
+              statistic = list(all_categorical() ~ "{n} / {N} ({p}%)"),
+              missing_text = "(Missing)",
+              label = list(screen_d ~ "Screening Year", age_cat ~ "Age", orig_endemicity ~ "Origin", reg_act ~ "Residence", 
+                           alcohol_cons ~ "Alcohol Consumption", audit ~ "AUDIT-C Score", etg_res ~ "Dipstick EtG", 
+                           drugs ~ "Drug Consumption", smoke_yn ~ "Smoking", HTA ~ "Hypertension", diabete ~ "Diabetes", 
+                           dyslipidemia ~ "Dyslipidemia", liver_dis_FDR ~ "Family History of Liver Disease", 
+                           hcc_FDR ~ "Family History of HCC", cvb_detection ~ "HBV viral load", qAgHBs_cat ~ "qAgHBs", 
+                           AgHBe_res ~ "AgHBe", AcVHC_res ~ "HCV Serology", AcVHD_res ~ "HDV Serology", on_TDF_bl ~ "On TDF at Baseline",
+                           alt_res ~ "ALAT", apri_diag ~ "APRI Score", fibs_med_diag ~ "FibroScan LSM", cap_med_diag ~ "FibroScan CAP", 
+                           upcr_diag ~ "UPCR Ratio", leubu_res ~ "Leukocyturia (Urine Strips)", hembu_res ~ "Hematuria (Urine Strips)", 
+                           protbu_res ~ "Proteinuria (Urine Strips)", trad_med ~ "Traditional Medicine", eGFR_diag ~ "eGFR", 
+                           cca_res ~ "CCA Result")) %>%
+  add_overall(last = TRUE, col_label = "**Total** (N = {N})") %>% 
+  add_p(pvalue_fun = ~ style_pvalue(.x, digits = 2)) %>%
+  modify_header(label ~ "**Variable**") %>%
+  modify_caption("**Table 1. Patient Characteristics**") %>%
+  bold_labels() %>% 
+  as_gt()
+```
+
+## Table 2
 
 ```{r}
 SchistoHBV %>%

@@ -2,11 +2,7 @@
 title: "ANALYSIS"
 subtitle: "SEN-B"
 author: "Max Gurtler"
-output: 
-  html_document:
-    theme: "journal"
-    toc: true
-    toc_float: true
+output: html_document
 date: "2024-05-27"
 ---
 
@@ -18,7 +14,7 @@ knitr::opts_chunk$set(echo = FALSE)
 ```{r}
 options(repos = c(CRAN = "https://cran.r-project.org"))
 if(!require('pacman')) install.packages('pacman')
-pacman::p_load(tidyverse, here, janitor, dplyr, knitr, lubridate, reactable, gtsummary)
+pacman::p_load(tidyverse, here, janitor, dplyr, knitr, lubridate, reactable, gtsummary, gt)
 ```
 
 ```{r}
@@ -64,7 +60,6 @@ SchistoHBV_analysis %>%
   add_overall(last = TRUE, col_label = "**Total** (N = {N})") %>% 
   add_p(pvalue_fun = ~ style_pvalue(.x, digits = 2)) %>%
   modify_header(label ~ "**Variable**") %>%
-  modify_spanning_header(c("stat_1", "stat_2") ~ "**CCA Result**") %>%
   modify_caption("**Table 1. Patient Characteristics**") %>%
   bold_labels() %>% 
   as_gt()
@@ -111,5 +106,9 @@ SchistoHBV_analysis %>%
   modify_caption("**Table 2. Patient Characteristics**") %>%
   bold_labels() %>% 
   as_gt()
+```
+
+```{r}
+# tab2 %>% gtsave("tab2.docx")
 ```
 
