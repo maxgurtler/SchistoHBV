@@ -18,7 +18,7 @@ knitr::opts_chunk$set(echo = FALSE)
 ```{r}
 options(repos = c(CRAN = "https://cran.r-project.org"))
 if(!require('pacman')) install.packages('pacman')
-pacman::p_load(tidyverse, here, janitor, dplyr, knitr, lubridate, reactable, gtsummary)
+pacman::p_load(tidyverse, here, janitor, dplyr, knitr, lubridate, reactable, gtsummary, plotly)
 ```
 
 ```{r}
@@ -1037,3 +1037,196 @@ SchistoHBV %>%
   bold_labels() %>% 
   as_gt()
 ```
+
+## Plots
+
+### Prevalence by Origin
+
+```{r}
+# create table
+tab_prev_by_orig <- SchistoHBV %>% 
+  select(orig_endemicity, cca_res) %>%
+  filter(!is.na(cca_res)) %>%
+  filter(!is.na(orig_endemicity)) %>% 
+  group_by(orig_endemicity) %>%
+  summarise(cases = sum(cca_res == 'Positive'),
+            total = n()) %>%
+  mutate(prevalence = round((cases/total)*100, digits = 1)) %>%
+  mutate(percent = paste0(prevalence, "%")) %>% 
+  arrange(desc(prevalence))
+
+# convert orig_endemicity to factor and reorder levels by prevalence
+tab_prev_by_orig$orig_endemicity <- factor(tab_prev_by_orig$orig_endemicity, levels = tab_prev_by_orig$orig_endemicity[order(tab_prev_by_orig$prevalence, decreasing = FALSE)])
+
+# create color palette
+tab_prev_by_orig <- tab_prev_by_orig %>% 
+  mutate(color = case_when(
+    orig_endemicity == "≥50% prevalence (high)" ~ "red",
+    orig_endemicity == "10-49% prevalence (moderate)" ~ "#e30bd8",
+    orig_endemicity == "1-9.9% prevalence (low)" ~ "#ede509",
+    orig_endemicity == "<1% prevalence (non-endemic)" ~ "#0dde3a",
+    TRUE ~ "gray70"
+  ))
+
+# plot
+plot_prev_by_orig <- ggplot(tab_prev_by_orig, aes(x = prevalence, y = orig_endemicity, fill = color)) +
+  geom_col() +
+  geom_text(aes(label = percent), hjust = 1, nudge_x = -.5,
+            size = 4, fontface = "bold", family = "Helvetica") +
+  scale_x_continuous(limits = c(NA, 15)) +
+  scale_fill_identity(guide = "none") +
+  labs(x = "Prevalence (%)", y = "") +
+  theme_minimal() +
+  theme(axis.text.y = element_text(size = 12))
+
+plot_prev_by_orig
+
+# Save as JPG
+ggsave("plot_prev_by_orig.jpg", plot_prev_by_orig, width = 8, height = 6, dpi = 300)
+```
+
+### Prevalence by HBV viral load
+
+```{r}
+tab_prev_by_load <- SchistoHBV %>% 
+  select(cvb_detection, cca_res) %>%
+  filter(!is.na(cca_res)) %>%
+  filter(!is.na(cvb_detection)) %>%
+  mutate(cvb_detection = factor(cvb_detection, levels = c("≤20 IU/mL", "21-2000 IU/mL", "2001-20000 IU/mL", "≥20000 IU/mL"))) %>% 
+  group_by(cvb_detection) %>%
+  summarise(cases = sum(cca_res == 'Positive'),
+            total = n()) %>%
+  mutate(prevalence = round((cases/total)*100, digits = 1)) %>%
+  mutate(percent = paste0(prevalence, "%")) %>% 
+  arrange(desc(cvb_detection))
+
+# create color palette
+tab_prev_by_load <- tab_prev_by_load %>% 
+  mutate(color = case_when(
+    cvb_detection == "≥20000 IU/mL" ~ "#039191",
+    cvb_detection == "2001-20000 IU/mL" ~ "#20B2AA",
+    cvb_detection == "21-2000 IU/mL" ~ "#40E0D0",
+    cvb_detection == "≤20 IU/mL" ~ "#7FFFD4"))
+
+# plot
+plot_prev_by_load <- ggplot(tab_prev_by_load, aes(x = prevalence, y = cvb_detection, fill = color)) +
+  geom_col() +
+  geom_text(aes(label = percent), hjust = 1, nudge_x = -.5,
+            size = 4, fontface = "bold", family = "Helvetica") +
+  scale_x_continuous(limits = c(NA, 15)) +
+  scale_fill_identity(guide = "none") +
+  labs(x = "Prevalence (%)", y = "") +
+  theme_minimal() +
+  theme(axis.text.y = element_text(size = 12))
+
+plot_prev_by_load
+
+# Save as JPG
+ggsave("plot_prev_by_load.jpg", plot_prev_by_load, width = 8, height = 6, dpi = 300)
+
+```
+
+### Prevalence by qAgHBs
+
+```{r}
+tab_prev_by_qAgHBs <- SchistoHBV %>% 
+  select(qAgHBs_cat, cca_res) %>%
+  filter(!is.na(cca_res)) %>%
+  filter(!is.na(qAgHBs_cat)) %>%
+  mutate(qAgHBs_cat = factor(qAgHBs_cat, levels = c("<100 IU/mL", "100-1000 IU/mL", ">1000 IU/mL"))) %>% 
+  group_by(qAgHBs_cat) %>%
+  summarise(cases = sum(cca_res == 'Positive'),
+            total = n()) %>%
+  mutate(prevalence = round((cases/total)*100, digits = 1)) %>%
+  mutate(percent = paste0(prevalence, "%")) %>% 
+  arrange(desc(qAgHBs_cat))
+
+# create color palette
+tab_prev_by_qAgHBs <- tab_prev_by_qAgHBs %>% 
+  mutate(color = case_when(
+    qAgHBs_cat == ">1000 IU/mL" ~ "#20B2AA",
+    qAgHBs_cat == "100-1000 IU/mL" ~ "#40E0D0",
+    qAgHBs_cat == "<100 IU/mL" ~ "#7FFFD4"
+  ))
+
+# plot
+plot_prev_by_qAgHBs <- ggplot(tab_prev_by_qAgHBs, aes(x = prevalence, y = qAgHBs_cat, fill = color)) +
+  geom_col() +
+  geom_text(aes(label = percent), hjust = 1, nudge_x = -.5,
+            size = 4, fontface = "bold", family = "Helvetica") +
+  scale_x_continuous(limits = c(NA, 15)) +
+  scale_fill_identity(guide = "none") +
+  labs(x = "Prevalence (%)", y = "") +
+  theme_minimal() +
+  theme(axis.text.y = element_text(size = 12))
+
+plot_prev_by_qAgHBs
+
+# Save as JPG
+ggsave("plot_prev_by_qHBsAg.jpg", plot_prev_by_qAgHBs, width = 8, height = 6, dpi = 300)
+
+
+```
+
+
+### Prevalence by LSM (categorized)
+
+```{r}
+tab_prev_by_LSM <- SchistoHBV %>% 
+  select(fibs_med_diag, cca_res) %>%
+  filter(!is.na(cca_res)) %>%
+  filter(!is.na(fibs_med_diag)) %>% 
+  group_by(fibs_med_diag) %>%
+  summarise(cases = sum(cca_res == 'Positive'),
+            total = n()) %>%
+  mutate(prevalence = round((cases/total)*100, digits = 1)) %>%
+  mutate(percent = paste0(prevalence, "%")) %>% 
+  arrange(desc(fibs_med_diag))
+```
+
+### Prevalence by LSM ≥7.1 kPa
+
+```{r}
+tab_prev_by_LSM <- SchistoHBV %>% 
+  select(fibs7, cca_res) %>%
+  filter(!is.na(cca_res)) %>%
+  filter(!is.na(fibs7)) %>% 
+  group_by(fibs7) %>%
+  summarise(cases = sum(cca_res == 'Positive'),
+            total = n()) %>%
+  mutate(prevalence = round((cases/total)*100, digits = 1)) %>%
+  mutate(percent = paste0(prevalence, "%")) %>% 
+  arrange(desc(fibs7))
+```
+
+### Prevalence by LSM ≥11.1 kPa
+
+```{r}
+tab_prev_by_LSM <- SchistoHBV %>% 
+  select(fibs11, cca_res) %>%
+  filter(!is.na(cca_res)) %>%
+  filter(!is.na(fibs11)) %>% 
+  group_by(fibs11) %>%
+  summarise(cases = sum(cca_res == 'Positive'),
+            total = n()) %>%
+  mutate(prevalence = round((cases/total)*100, digits = 1)) %>%
+  mutate(percent = paste0(prevalence, "%")) %>% 
+  arrange(desc(fibs11))
+```
+
+
+### Prevalence by eGFR
+
+```{r}
+tab_prev_by_LSM <- SchistoHBV %>% 
+  select(eGFR_diag, cca_res) %>%
+  filter(!is.na(cca_res)) %>%
+  filter(!is.na(eGFR_diag)) %>% 
+  group_by(eGFR_diag) %>%
+  summarise(cases = sum(cca_res == 'Positive'),
+            total = n()) %>%
+  mutate(prevalence = round((cases/total)*100, digits = 1)) %>%
+  mutate(percent = paste0(prevalence, "%")) %>% 
+  arrange(desc(prevalence))
+```
+
